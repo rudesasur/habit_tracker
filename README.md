@@ -27,7 +27,7 @@ npm run dev
 Run the unit tests:
 
 ```bash
-npm test
+npm run test
 ```
 
 Create a production build:
@@ -48,10 +48,10 @@ src/
 	main.tsx
 	index.css
 	components/Modal.tsx
-	src/lib/dateUtils.ts
-	src/lib/streak.ts
-	src/lib/storage.ts
-	src/lib/types.ts
+	lib/dateUtils.ts
+	lib/streak.ts
+	lib/storage.ts
+	lib/types.ts
 ```
 
 ## Known limitations
@@ -59,4 +59,6 @@ src/
 - Data is local to one browser profile; there is no sync, account, export, or backend.
 - The challenge start date is initialized once and has no settings screen to change it.
 - Completion rate is calculated over the habit's creation date or the most recent 30 calendar days, whichever is later.
+- Completion records are stored in the `streakly-habit-tracker-v1` localStorage entry as `YYYY-MM-DD` strings grouped by habit; streak counters are always derived.
+- If localStorage contains malformed data, the repository drops invalid habit records and loads an empty safe state. This is useful when debugging old browser data.
 - The design uses a remote Google Fonts import when internet access is available; the app still works with the browser fallback if it is blocked.

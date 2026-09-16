@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import Modal from './components/Modal'
-import { addDays, formatDate, formatShortDate, todayString } from './src/lib/dateUtils'
-import { calculateStreaks, isScheduledOnDate } from './src/lib/streak'
-import { createHabit, loadAppData, saveAppData } from './src/lib/storage'
-import type { AppData, Habit, HabitDraft, ScheduleType } from './src/lib/types'
+import { addDays, daysBetweenInclusive, formatDate, formatShortDate, todayString } from './lib/dateUtils'
+import { calculateStreaks, isScheduledOnDate } from './lib/streak'
+import { createHabit, loadAppData, saveAppData } from './lib/storage'
+import type { AppData, Habit, HabitDraft, ScheduleType } from './lib/types'
 
 const COLORS = ['#f97316', '#0f766e', '#2563eb', '#db2777', '#7c3aed', '#65a30d']
 const ICONS = ['💧', '📚', '🏃', '🍎', '🧘', '🎸', '🌱', '✍️']
@@ -12,7 +12,7 @@ const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const emptyDraft: HabitDraft = { name: '', description: '', scheduleType: 'DAILY', customDays: [1, 2, 3, 4, 5], target: '', unit: '', emoji: '✨', color: COLORS[0] }
 
 function challengeDay(start: string, today: string) {
-  const days = Math.floor((new Date(`${today}T12:00:00`).getTime() - new Date(`${start}T12:00:00`).getTime()) / 86400000) + 1
+  const days = daysBetweenInclusive(start, today)
   return Math.max(1, Math.min(75, days))
 }
 
@@ -25,19 +25,25 @@ function App() {
   const [view, setView] = useState<'today' | 'habits'>('today')
   const [editing, setEditing] = useState<Habit | undefined>()
   const [showForm, setShowForm] = useState(false)
-  const [showHistory, setShowHistory] = useState<Habit | undefined>()
+  const [showHistoryId, setShowHistoryId] = useState<string>()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'active' | 'archived' | 'all'>('active')
   const [scheduleFilter, setScheduleFilter] = useState<'ALL' | ScheduleType>('ALL')
   const today = todayString()
+  const showHistory = showHistoryId
+    ? data.habits.find(habit => habit.id === showHistoryId)
+    : undefined
 
   const update = (next: AppData) => { setData(next); saveAppData(next) }
   const activeToday = data.habits.filter(h => !h.archived && isScheduledOnDate(h.scheduleType, h.customDays, today))
   const doneToday = activeToday.filter(h => h.completions.includes(today)).length
   const visibleHabits = useMemo(() => data.habits.filter(h => (filter === 'all' || (filter === 'archived' ? h.archived : !h.archived)) && (scheduleFilter === 'ALL' || h.scheduleType === scheduleFilter) && h.name.toLowerCase().includes(query.toLowerCase())), [data.habits, filter, scheduleFilter, query])
   const toggle = (habit: Habit, date = today) => {
+    if (date < habit.createdDate || date > today || !isScheduledOnDate(habit.scheduleType, habit.customDays, date)) return
     const has = habit.completions.includes(date)
-    const completions = has ? habit.completions.filter(item => item !== date) : [...habit.completions, date].sort()
+    const completions = has
+      ? habit.completions.filter(item => item !== date)
+      : [...new Set([...habit.completions, date])].sort()
     update({ ...data, habits: data.habits.map(item => item.id === habit.id ? { ...item, completions } : item) })
   }
   const saveHabit = (draft: HabitDraft) => {
@@ -55,8 +61,8 @@ function App() {
 
   return <div className="app-shell">
     <aside className="sidebar"><div className="brand"><span className="brand-mark">S</span><span>streakly</span></div><p className="eyebrow">YOUR ROUTINE</p><nav><button className={view === 'today' ? 'nav-item active' : 'nav-item'} onClick={() => setView('today')}>◷ <span>Today</span><b>{doneToday}/{activeToday.length}</b></button><button className={view === 'habits' ? 'nav-item active' : 'nav-item'} onClick={() => setView('habits')}>▦ <span>All habits</span><b>{data.habits.filter(h => !h.archived).length}</b></button></nav><div className="challenge"><div className="challenge-top"><span>75 DAY CHALLENGE</span><strong>{challengeDay(data.challengeStartDate, today)}<small>/75</small></strong></div><div className="progress"><span style={{ width: `${challengeDay(data.challengeStartDate, today) / 75 * 100}%` }} /></div><p>{data.habits.length ? 'Small steps, stacked daily.' : 'Your next chapter starts here.'}</p></div><button className="seed-button" onClick={seed}>✦ Load demo habits</button><div className="sidebar-foot"><span className="status-dot" /> Stored locally<br /><small>Private to this browser</small></div></aside>
-    <main className="main-content"><header className="topbar"><div><p className="kicker">{formatDate(today, { weekday: 'long' }).toUpperCase()}</p><h1>{view === 'today' ? 'Make today count.' : 'Your habits.'}</h1></div><button className="add-button" onClick={() => { setEditing(undefined); setShowForm(true) }}>＋ <span>New habit</span></button></header>{view === 'today' ? <TodayView habits={activeToday} today={today} toggle={toggle} onOpen={setShowHistory} onNew={() => setShowForm(true)} /> : <HabitLibrary habits={visibleHabits} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} scheduleFilter={scheduleFilter} setScheduleFilter={setScheduleFilter} onEdit={habit => { setEditing(habit); setShowForm(true) }} onHistory={setShowHistory} onArchive={archive} onDelete={remove} onNew={() => { setEditing(undefined); setShowForm(true) }} />}</main>
-    {showForm && <HabitForm initial={editing ? draftFromHabit(editing) : emptyDraft} onClose={() => { setShowForm(false); setEditing(undefined) }} onSave={saveHabit} />}{showHistory && <History habit={showHistory} today={today} onClose={() => setShowHistory(undefined)} onToggle={date => toggle(showHistory, date)} />}
+    <main className="main-content"><header className="topbar"><div><p className="kicker">{formatDate(today, { weekday: 'long' }).toUpperCase()}</p><h1>{view === 'today' ? 'Make today count.' : 'Your habits.'}</h1></div><button className="add-button" onClick={() => { setEditing(undefined); setShowForm(true) }}>＋ <span>New habit</span></button></header>{view === 'today' ? <TodayView habits={activeToday} today={today} toggle={toggle} onOpen={habit => setShowHistoryId(habit.id)} onNew={() => setShowForm(true)} /> : <HabitLibrary habits={visibleHabits} query={query} setQuery={setQuery} filter={filter} setFilter={setFilter} scheduleFilter={scheduleFilter} setScheduleFilter={setScheduleFilter} onEdit={habit => { setEditing(habit); setShowForm(true) }} onHistory={habit => setShowHistoryId(habit.id)} onArchive={archive} onDelete={remove} onNew={() => { setEditing(undefined); setShowForm(true) }} />}</main>
+    {showForm && <HabitForm initial={editing ? draftFromHabit(editing) : emptyDraft} onClose={() => { setShowForm(false); setEditing(undefined) }} onSave={saveHabit} />}{showHistory && <History habit={showHistory} today={today} onClose={() => setShowHistoryId(undefined)} onToggle={date => toggle(showHistory, date)} />}
   </div>
 }
 
@@ -72,5 +78,5 @@ function HabitForm({ initial, onClose, onSave }: { initial: HabitDraft; onClose:
 function History({ habit, today, onClose, onToggle }: { habit: Habit; today: string; onClose: () => void; onToggle: (date: string) => void }) { const dates = Array.from({ length: 30 }, (_, index) => addDays(today, index - 29)); return <Modal title={`${habit.emoji} ${habit.name}`} subtitle="Last 30 days · click a scheduled day to backfill" onClose={onClose}><div className="history"><div className="history-summary"><div><strong>{completionRate(habit)}%</strong><span>completion rate</span></div><div><strong>🔥 {calculateStreaks(habit, today).current}</strong><span>current streak</span></div><div><strong>{calculateStreaks(habit, today).best}</strong><span>best streak</span></div></div><div className="heatmap">{dates.map(date => { const scheduled = isScheduledOnDate(habit.scheduleType, habit.customDays, date); const complete = habit.completions.includes(date); return <button key={date} disabled={!scheduled || date > today} className={`heat-dot ${complete ? 'done' : scheduled ? 'missed' : 'off'}`} onClick={() => onToggle(date)} title={`${formatShortDate(date)}${complete ? ' · complete' : scheduled ? ' · mark complete' : ' · not scheduled'}`} /> })}</div><div className="heat-legend"><span><i className="heat-dot done" /> Complete</span><span><i className="heat-dot missed" /> Scheduled</span><span><i className="heat-dot off" /> Rest day</span></div></div></Modal> }
 
 function scheduleText(habit: Pick<Habit, 'scheduleType' | 'customDays'>) { if (habit.scheduleType === 'DAILY') return 'Every day'; if (habit.scheduleType === 'WEEKDAYS') return 'Weekdays'; return habit.customDays.length ? habit.customDays.map(day => DAYS[day]).join(' · ') : 'No days selected' }
-function completionRate(habit: Habit) { const end = todayString(); const start = habit.createdDate > addDays(end, -29) ? habit.createdDate : addDays(end, -29); let scheduled = 0; for (let date = start; date <= end; date = addDays(date, 1)) if (isScheduledOnDate(habit.scheduleType, habit.customDays, date)) scheduled++; return scheduled ? Math.round(habit.completions.filter(date => date >= start && date <= end).length / scheduled * 100) : 0 }
+function completionRate(habit: Habit) { const end = todayString(); const start = habit.createdDate > addDays(end, -29) ? habit.createdDate : addDays(end, -29); let scheduled = 0; for (let date = start; date <= end; date = addDays(date, 1)) if (isScheduledOnDate(habit.scheduleType, habit.customDays, date)) scheduled++; const completedScheduled = new Set(habit.completions.filter(date => date >= start && date <= end && isScheduledOnDate(habit.scheduleType, habit.customDays, date))); return scheduled ? Math.round(completedScheduled.size / scheduled * 100) : 0 }
 export default App
